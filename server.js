@@ -12,6 +12,7 @@ const mime = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon'
 };
@@ -66,6 +67,7 @@ async function products() {
   const categoryI = find(['categoria','category','cat']);
   const linkI = find(['link','url produto','product url','affiliate link']);
   const descriptionI = find(['descricao','description']);
+  const bannerI = find(['banner']);
   const value = (r, i) => i >= 0 ? String(r[i] || '').trim() : '';
 
   return rows.slice(1).map(r => ({
@@ -75,8 +77,9 @@ async function products() {
     image: value(r, imageI),
     category: value(r, categoryI),
     link: value(r, linkI),
-    description: value(r, descriptionI)
-  })).filter(p => p.name || p.price || p.image || p.link);
+    description: value(r, descriptionI),
+    banner: value(r, bannerI)
+  })).filter(p => p.name || p.price || p.image || p.link || p.banner);
 }
 
 const server = http.createServer(async (req, res) => {

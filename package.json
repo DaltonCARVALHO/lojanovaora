@@ -4,6 +4,7 @@
   "private": true,
   "description": "NOVAORA online store synchronized with Google Sheets",
   "main": "server.js",
-  "scripts": {"start": "node server.js"},
-  "dependencies": {"express": "^5.1.0"}
+  "scripts": {
+    "start": "node server.js"
+  }
 }

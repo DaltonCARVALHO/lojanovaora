@@ -1,42 +1,68 @@
-const express = require('express');
-const app = express();
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const PORT = process.env.PORT || 3000;
 const SHEET_ID = '1w4WGdP-9dezy2ekPlcv7G4C8H2_GUSbcuFlWacvSBXM';
 
-app.use(express.static('.'));
+const mime = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon'
+};
 
-app.get('/api/products', async (_req, res) => {
+function send(res, status, body, type='application/json; charset=utf-8') {
+  res.writeHead(status, {'Content-Type': type});
+  res.end(body);
+}
+
+async function products() {
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Google Sheets HTTP ${response.status}`);
+  const text = await response.text();
+  const jsonText = text.replace(/^.*?\(/, '').replace(/\);?\s*$/, '');
+  const data = JSON.parse(jsonText);
+  const cols = (data.table.cols || []).map(c => String(c.label || '').toLowerCase().trim());
+  const find = names => cols.findIndex(c => names.includes(c));
+  const nameI = find(['nome','produto','name','title']);
+  const priceI = find(['preço','preco','price','valor']);
+  const imageI = find(['imagem','image','foto','url imagem','image url']);
+  const categoryI = find(['categoria','category','cat']);
+  const linkI = find(['link','url','url produto','product url','affiliate link']);
+  const value = (row, i) => i >= 0 && row.c && row.c[i] ? String(row.c[i].f ?? row.c[i].v ?? '') : '';
+  return (data.table.rows || []).map(r => ({
+    name: value(r, nameI), price: value(r, priceI), image: value(r, imageI),
+    category: value(r, categoryI), link: value(r, linkI)
+  })).filter(p => p.name || p.price || p.image || p.link);
+}
+
+const server = http.createServer(async (req, res) => {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Google Sheets HTTP ${response.status}`);
-    const text = await response.text();
-    const jsonText = text.replace(/^.*?\(/, '').replace(/\);?\s*$/, '');
-    const data = JSON.parse(jsonText);
-    const cols = (data.table.cols || []).map(c => c.label || '');
-    const rows = data.table.rows || [];
-    const norm = s => String(s || '').toLowerCase().trim();
-    const findCol = names => cols.findIndex(c => names.includes(norm(c)));
-    const nameI = findCol(['nome','produto','name','title']);
-    const priceI = findCol(['preço','preco','price','valor']);
-    const imageI = findCol(['imagem','image','foto','url imagem','image url']);
-    const categoryI = findCol(['categoria','category','cat']);
-    const linkI = findCol(['link','url','url produto','product url','affiliate link']);
-    const value = (row, i) => i >= 0 && row.c && row.c[i] ? (row.c[i].f || row.c[i].v || '') : '';
-    const products = rows.map(r => ({
-      name: value(r, nameI),
-      price: value(r, priceI),
-      image: value(r, imageI),
-      category: value(r, categoryI),
-      link: value(r, linkI)
-    })).filter(p => p.name || p.price || p.image || p.link);
-    res.json(products);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Não foi possível ler a planilha Google Sheets.' });
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname === '/api/products') {
+      return send(res, 200, JSON.stringify(await products()));
+    }
+    if (url.pathname === '/health') {
+      return send(res, 200, JSON.stringify({ok:true, store:'NOVAORA', sheet:SHEET_ID}));
+    }
+    let file = url.pathname === '/' ? '/index.html' : url.pathname;
+    file = path.normalize(file).replace(/^([.][.][\\/])+/, '');
+    const full = path.join(process.cwd(), file);
+    if (!full.startsWith(process.cwd())) return send(res, 403, 'Forbidden', 'text/plain; charset=utf-8');
+    fs.readFile(full, (err, data) => {
+      if (err) return send(res, 404, 'Not found', 'text/plain; charset=utf-8');
+      send(res, 200, data, mime[path.extname(full).toLowerCase()] || 'application/octet-stream');
+    });
+  } catch (e) {
+    console.error(e);
+    send(res, 500, JSON.stringify({error:'Erro no servidor NOVAORA'}));
   }
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, store: 'NOVAORA', sheet: SHEET_ID }));
-
-app.listen(PORT, () => console.log(`NOVAORA running on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`NOVAORA running on port ${PORT}`));

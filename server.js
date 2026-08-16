@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const PORT = process.env.PORT || 3000;
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ6EWYUSyx5Ysm5x7YpWGVmE_tX981oNZM_pe8e2T0QuiseyNV9x4-KIc6pZmldfw/pub?gid=474764640&single=true&output=csv';
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ6EWYUSyx5Ysm5x7YpWGVmE_tX981oNZM_pe8e2T0QuiseyNV9x4-KIc6pZmldfw/pub?gid=761034080&single=true&output=csv';
 const CONFIG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ6EWYUSyx5Ysm5x7YpWGVmE_tX981oNZM_pe8e2T0QuiseyNV9x4-KIc6pZmldfw/pub?sheet=CONFIGURA%C3%87%C3%83O&output=csv';
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ico':'image/x-icon'};
 function send(res,status,body,type='application/json; charset=utf-8'){res.writeHead(status,{'Content-Type':type,'Cache-Control':'no-store'});res.end(body)}

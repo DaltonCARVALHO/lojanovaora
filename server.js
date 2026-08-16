@@ -1,26 +1,27 @@
+
 const express = require("express");
 
 const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-// ===============================
-// GOOGLE SHEETS
-// ===============================
+// ==========================================
+// GOOGLE SHEETS - LINK PUBLICADO
+// ==========================================
 
-const SHEET_ID = "1w4WGdP-9dezy2ekPlcv7G4C8H2_GUSbcuFlWacvSBXM";
-const SHEET_GID = "0";
+const SHEET_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRo5j9tTX3G9UUPhz4tvAU53oegJuoPE4GOk25fc2d-7VFPTwng0EySQqEr9S_JyqebGtxlsXZlIJiK/pub?gid=26648085&single=true&output=csv";
 
-// ===============================
+// ==========================================
 // CONFIGURAÇÃO
-// ===============================
+// ==========================================
 
 app.use(express.json());
 app.use(express.static("public"));
 
-// ===============================
-// CONVERTER CSV DA PLANILHA
-// ===============================
+// ==========================================
+// CONVERSOR CSV
+// ==========================================
 
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
@@ -31,32 +32,35 @@ function parseCSV(text) {
 
   const headers = lines[0]
     .split(",")
-    .map((header) => header.trim().toLowerCase());
+    .map(header =>
+      header
+        .trim()
+        .replace(/^"|"$/g, "")
+        .toLowerCase()
+    );
 
-  return lines.slice(1).map((line) => {
+  return lines.slice(1).map(line => {
     const values = line.split(",");
 
     const product = {};
 
     headers.forEach((header, index) => {
-      product[header] = values[index] || "";
+      product[header] = (values[index] || "")
+        .trim()
+        .replace(/^"|"$/g, "");
     });
 
     return product;
   });
 }
 
-// ===============================
+// ==========================================
 // API DOS PRODUTOS
-// ===============================
+// ==========================================
 
 app.get("/api/products", async (req, res) => {
   try {
-    const url =
-      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export` +
-      `?format=csv&gid=${SHEET_GID}`;
-
-    const response = await fetch(url);
+    const response = await fetch(SHEET_CSV_URL);
 
     if (!response.ok) {
       throw new Error(
@@ -68,6 +72,10 @@ app.get("/api/products", async (req, res) => {
 
     const products = parseCSV(csv);
 
+    console.log(
+      `Produtos carregados da planilha: ${products.length}`
+    );
+
     res.json(products);
 
   } catch (error) {
@@ -78,14 +86,15 @@ app.get("/api/products", async (req, res) => {
     );
 
     res.status(500).json({
-      error: "Erro ao carregar produtos da Google Sheets."
+      error:
+        "Erro ao carregar produtos da Google Sheets."
     });
   }
 });
 
-// ===============================
+// ==========================================
 // PÁGINA PRINCIPAL
-// ===============================
+// ==========================================
 
 app.get("/", (req, res) => {
   res.sendFile(
@@ -93,9 +102,9 @@ app.get("/", (req, res) => {
   );
 });
 
-// ===============================
-// OUTRAS ROTAS
-// ===============================
+// ==========================================
+// OUTRAS PÁGINAS
+// ==========================================
 
 app.use((req, res, next) => {
 
@@ -111,9 +120,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// ===============================
+// ==========================================
 // SERVIDOR
-// ===============================
+// ==========================================
 
 app.listen(PORT, () => {
 

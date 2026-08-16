@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOVAORA — Loja Online</title>
+  <meta name="description" content="NOVAORA — loja online com produtos atualizados a partir do Google Sheets.">
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f5f6f8;color:#171717}header{background:#111827;color:#fff;padding:24px 5%;display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}header h1{margin:0;font-size:30px}header p{margin:5px 0 0;color:#cbd5e1}.status{font-size:13px;color:#cbd5e1}.container{width:min(1200px,90%);margin:30px auto}.toolbar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px}.toolbar input,.toolbar select{padding:12px 14px;border:1px solid #d1d5db;border-radius:10px;background:#fff}.toolbar input{flex:1;min-width:220px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}.card{background:#fff;border-radius:14px;padding:16px;box-shadow:0 4px 18px rgba(0,0,0,.07);display:flex;flex-direction:column;gap:10px}.card img{width:100%;height:190px;object-fit:contain;border-radius:10px;background:#f8fafc}.card h2{font-size:18px;margin:0}.price{font-size:22px;font-weight:700}.buy{display:block;text-align:center;text-decoration:none;background:#111827;color:#fff;padding:12px;border-radius:10px;font-weight:700}.empty,.error{background:#fff;padding:30px;border-radius:14px;text-align:center}.error{color:#991b1b}.small{font-size:12px;color:#64748b}footer{padding:35px 5%;text-align:center;color:#64748b}
+</style>
+</head>
+<body>
+<header><div><h1>NOVAORA</h1><p>Loja Online</p></div><div id="status" class="status">A carregar produtos…</div></header>
+<main class="container">
+  <div class="toolbar"><input id="search" placeholder="Pesquisar produtos…"><select id="category"><option value="">Todas as categorias</option></select></div>
+  <section id="products" class="grid"></section>
+</main>
+<footer>© NOVAORA — lojanovaora.com</footer>
+<script>
+const SHEET_ID='1w4WGdP-9dezy2ekPlcv7G4C8H2_GUSbcuFlWacvSBXM';
+const DATA_URL=`/api/products`;
+let products=[];
+const pick=(o,names)=>{for(const n of names){const k=Object.keys(o).find(x=>x.toLowerCase().trim()===n);if(k&&o[k]!=null)return String(o[k]).trim()}return ''};
+function render(){const q=document.querySelector('#search').value.toLowerCase();const c=document.querySelector('#category').value;const list=products.filter(p=>(!q||JSON.stringify(p).toLowerCase().includes(q))&&(!c||p.category===c));const el=document.querySelector('#products');if(!list.length){el.innerHTML='<div class="empty">Nenhum produto encontrado.</div>';return}el.innerHTML=list.map(p=>`<article class="card">${p.image?`<img src="${p.image}" alt="${esc(p.name)}" loading="lazy">`:''}<h2>${esc(p.name||'Produto')}</h2>${p.category?`<div class="small">${esc(p.category)}</div>`:''}${p.price?`<div class="price">${esc(p.price)}</div>`:''}${p.link?`<a class="buy" href="${esc(p.link)}" target="_blank" rel="noopener">Ver produto</a>`:''}</article>`).join('')}
+function esc(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+async function load(){try{const r=await fetch(DATA_URL);if(!r.ok)throw new Error('Falha ao carregar a planilha');products=await r.json();const cats=[...new Set(products.map(p=>p.category).filter(Boolean))].sort();document.querySelector('#category').innerHTML='<option value="">Todas as categorias</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join('');document.querySelector('#status').textContent=`${products.length} produtos sincronizados`;render()}catch(e){document.querySelector('#status').textContent='Erro de sincronização';document.querySelector('#products').innerHTML=`<div class="error">Não foi possível carregar os produtos da planilha. Verifique se a folha está partilhada como “Qualquer pessoa com o link — Leitor”.</div>`}}
+document.querySelector('#search').addEventListener('input',render);document.querySelector('#category').addEventListener('change',render);load();
+</script>
+</body>
+</html>

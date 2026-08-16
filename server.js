@@ -1,72 +1,30 @@
 const express = require("express");
 
 const app = express();
-
 const PORT = process.env.PORT || 10000;
 
 // ======================================================
-// NOVAORA - GOOGLE SHEETS
+// NOVAORA — GOOGLE SHEETS
 // ======================================================
-
-// PLANILHA 1 - aba principal
 const SHEET_URL_1 =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRo5j9tTX3G9UUPhz4tvAU53oegJuoPE4GOk25fc2d-7VFPTwng0EySQqEr9S_JyqebGtxlsXZlIJiK/pub?gid=0&single=true&output=csv";
 
-// PLANILHA 2 - aba de produtos
 const SHEET_URL_2 =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRo5j9tTX3G9UUPhz4tvAU53oegJuoPE4GOk25fc2d-7VFPTwng0EySQqEr9S_JyqebGtxlsXZlIJiK/pub?gid=26648085&single=true&output=csv";
-
-// ======================================================
-// CONFIGURAÇÃO EXPRESS
-// ======================================================
 
 app.use(express.json());
 app.use(express.static("public"));
 
 // ======================================================
-// CSV - LEITOR MAIS SEGURO
+// TEXTO / CABEÇALHOS
 // ======================================================
-
-function parseCSVLine(line) {
-  const result = [];
-  let current = "";
-  let insideQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-
-    if (char === '"') {
-      if (insideQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        insideQuotes = !insideQuotes;
-      }
-    } else if (char === "," && !insideQuotes) {
-      result.push(current.trim());
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-
-  result.push(current.trim());
-
-  return result;
-}
-
 function limparTexto(valor) {
-  if (valor === undefined || valor === null) {
-    return "";
-  }
-
-  return String(valor)
-    .trim()
-    .replace(/^"(.*)"$/, "$1")
+  return String(valor ?? "")
+    .replace(/^\uFEFF/, "")
     .trim();
 }
 
-function normalizarCabecalho(valor) {
+function normalizar(valor) {
   return limparTexto(valor)
     .toLowerCase()
     .normalize("NFD")
@@ -76,230 +34,284 @@ function normalizarCabecalho(valor) {
 }
 
 // ======================================================
-// CONVERTER CSV PARA LINHAS
+// CSV ROBUSTO — aceita vírgulas, aspas e campos com vírgula
 // ======================================================
+function parseCSV(csv) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
 
-function csvParaLinhas(csv) {
-  const linhas = csv
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .split("\n")
-    .map(linha => linha.trim())
-    .filter(linha => linha.length > 0);
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    const next = csv[i + 1];
 
-  return linhas.map(linha => parseCSVLine(linha));
+    if (ch === '"') {
+      if (quoted && next === '"') {
+        cell += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+
+    if (ch === "," && !quoted) {
+      row.push(limparTexto(cell));
+      cell = "";
+      continue;
+    }
+
+    if ((ch === "\n" || ch === "\r") && !quoted) {
+      if (ch === "\r" && next === "\n") i++;
+      row.push(limparTexto(cell));
+      cell = "";
+      if (row.some(v => v !== "")) rows.push(row);
+      row = [];
+      continue;
+    }
+
+    cell += ch;
+  }
+
+  if (cell !== "" || row.length) {
+    row.push(limparTexto(cell));
+    if (row.some(v => v !== "")) rows.push(row);
+  }
+
+  return rows;
 }
 
 // ======================================================
-// ENCONTRAR A LINHA DE PRODUTOS
+// ALIASES DA SUA PLANILHA
 // ======================================================
+const ALIASES = {
+  id: ["id", "identificacao", "identificação", "produto id", "sku"],
+  nome: [
+    "nome",
+    "nome produto",
+    "nome do produto",
+    "produto",
+    "nome da loja",
+    "titulo",
+    "título",
+    "nome comercial",
+    "produto nome"
+  ],
+  preco: [
+    "preco venda",
+    "preço venda",
+    "preco venda €",
+    "preço venda €",
+    "preco",
+    "preço",
+    "preco de venda",
+    "preço de venda",
+    "venda"
+  ],
+  imagem: [
+    "link imagem",
+    "imagem",
+    "url imagem",
+    "imagem url",
+    "link da imagem",
+    "url da imagem",
+    "foto",
+    "foto url",
+    "imagem produto"
+  ],
+  descricao: [
+    "descricao",
+    "descrição",
+    "descricao produto",
+    "descrição produto",
+    "detalhes",
+    "detalhes produto"
+  ],
+  stock: ["stock fornecedor", "stock", "estoque fornecedor", "estoque"],
+  fornecedor: ["fornecedor", "nome fornecedor"],
+  custo: [
+    "custo produto",
+    "custo produto €",
+    "custo",
+    "preco custo",
+    "preço custo"
+  ],
+  link: [
+    "link",
+    "url",
+    "link produto",
+    "url produto",
+    "link compra",
+    "link de compra",
+    "pagina produto"
+  ]
+};
 
-function encontrarCabecalhoProdutos(linhas) {
-  for (let i = 0; i < linhas.length; i++) {
-    const linha = linhas[i].map(normalizarCabecalho);
+function indicePorAliases(headers, aliases) {
+  const normalizados = headers.map(normalizar);
 
-    const temIdentificacao =
-      linha.includes("identificacao") ||
-      linha.includes("id");
+  for (const alias of aliases) {
+    const alvo = normalizar(alias);
+    const index = normalizados.indexOf(alvo);
+    if (index !== -1) return index;
+  }
 
-    const temFornecedor =
-      linha.includes("fornecedor");
+  // Também aceita cabeçalhos maiores que contenham o campo.
+  for (const alias of aliases) {
+    const alvo = normalizar(alias);
+    const index = normalizados.findIndex(h => h.includes(alvo));
+    if (index !== -1) return index;
+  }
 
-    const temCusto =
-      linha.some(campo =>
-        campo.includes("custo produto")
-      );
+  return -1;
+}
 
-    if (
-      temIdentificacao &&
-      (temFornecedor || temCusto)
-    ) {
-      return {
-        indice: i,
-        cabecalho: linha
-      };
+function valor(row, headers, aliases) {
+  const index = indicePorAliases(headers, aliases);
+  return index === -1 ? "" : limparTexto(row[index]);
+}
+
+// ======================================================
+// DETETAR A LINHA REAL DOS CAMPOS
+//
+// Algumas versões da sua planilha têm uma linha superior
+// com grupos (Identificação, Custos, etc.) e outra linha
+// com os nomes reais dos campos. Aqui usamos a linha que
+// melhor representa os campos de produto.
+// ======================================================
+function encontrarCabecalho(linhas) {
+  let melhor = null;
+  let melhorPontuacao = -1;
+
+  const camposImportantes = [
+    ...ALIASES.id,
+    ...ALIASES.nome,
+    ...ALIASES.preco,
+    ...ALIASES.imagem,
+    ...ALIASES.descricao,
+    ...ALIASES.stock,
+    ...ALIASES.fornecedor,
+    ...ALIASES.custo
+  ].map(normalizar);
+
+  for (let i = 0; i < Math.min(linhas.length, 15); i++) {
+    const headers = linhas[i].map(normalizar);
+    let pontuacao = 0;
+
+    for (const header of headers) {
+      if (!header) continue;
+      if (camposImportantes.includes(header)) pontuacao += 2;
+      else if (camposImportantes.some(c => header.includes(c))) pontuacao += 1;
+    }
+
+    if (indicePorAliases(linhas[i], ALIASES.id) !== -1) pontuacao += 4;
+    if (indicePorAliases(linhas[i], ALIASES.preco) !== -1) pontuacao += 3;
+    if (indicePorAliases(linhas[i], ALIASES.imagem) !== -1) pontuacao += 3;
+
+    if (pontuacao > melhorPontuacao) {
+      melhorPontuacao = pontuacao;
+      melhor = { index: i, headers: linhas[i].map(limparTexto) };
     }
   }
 
-  return null;
+  return melhorPontuacao >= 4 ? melhor : null;
 }
 
 // ======================================================
-// PEGAR VALOR DE UMA COLUNA
+// NORMALIZAR IMAGEM
+// Aceita links do Google Drive no formato /file/d/ID/view
 // ======================================================
+function normalizarImagem(url) {
+  const texto = limparTexto(url);
+  if (!texto) return "";
 
-function encontrarValor(row, headers, nomesPossiveis) {
-  for (const nome of nomesPossiveis) {
-    const indice = headers.indexOf(
-      normalizarCabecalho(nome)
-    );
-
-    if (indice !== -1) {
-      return limparTexto(row[indice]);
-    }
+  const match = texto.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+  if (match) {
+    return `https://drive.google.com/uc?export=view&id=${match[1]}`;
   }
 
-  return "";
+  return texto;
 }
 
 // ======================================================
-// CONVERTER PRODUTOS
+// PREÇO — mantém o valor como texto para não quebrar €
 // ======================================================
+function precoPublico(valorPreco) {
+  const valorLimpo = limparTexto(valorPreco);
+  if (!valorLimpo) return "";
 
+  // Evita publicar valores inválidos como 0,00 quando a célula
+  // está vazia ou contém texto de cabeçalho.
+  const numero = Number(
+    valorLimpo
+      .replace(/€/g, "")
+      .replace(/\s/g, "")
+      .replace(/\./g, "")
+      .replace(",", ".")
+  );
+
+  if (!Number.isFinite(numero) || numero <= 0) return "";
+
+  return `${numero.toFixed(2).replace(".", ",")} €`;
+}
+
+// ======================================================
+// PRODUTOS
+// ======================================================
 function extrairProdutos(linhas) {
-  const estrutura =
-    encontrarCabecalhoProdutos(linhas);
+  const estrutura = encontrarCabecalho(linhas);
 
   if (!estrutura) {
-    console.log(
-      "Não foi encontrada a tabela de produtos."
-    );
-
+    console.log("[NOVAORA] Cabeçalho de produtos não encontrado.");
     return [];
   }
 
-  const headers = estrutura.cabecalho;
-  const inicio = estrutura.indice + 1;
+  const { index: headerIndex, headers } = estrutura;
+  console.log(`[NOVAORA] Cabeçalho encontrado na linha ${headerIndex + 1}:`, headers);
 
   const produtos = [];
 
-  for (let i = inicio; i < linhas.length; i++) {
+  for (let i = headerIndex + 1; i < linhas.length; i++) {
     const row = linhas[i];
+    if (!row || !row.some(v => limparTexto(v))) continue;
 
-    if (!row || row.length === 0) {
-      continue;
-    }
+    const id = valor(row, headers, ALIASES.id);
+    const nome = valor(row, headers, ALIASES.nome);
+    const preco = valor(row, headers, ALIASES.preco);
+    const imagem = normalizarImagem(valor(row, headers, ALIASES.imagem));
+    const descricao = valor(row, headers, ALIASES.descricao);
+    const stock = valor(row, headers, ALIASES.stock);
+    const fornecedor = valor(row, headers, ALIASES.fornecedor);
+    const custo = valor(row, headers, ALIASES.custo);
+    const link = valor(row, headers, ALIASES.link);
 
-    const id = encontrarValor(
-      row,
-      headers,
-      [
-        "identificação",
-        "identificacao",
-        "id",
-        "produto id"
-      ]
-    );
+    // Ignora linhas que são cabeçalhos ou configurações.
+    if (normalizar(id) === "id") continue;
+    if (!id && !nome && !preco) continue;
 
-    const fornecedor = encontrarValor(
-      row,
-      headers,
-      [
-        "fornecedor"
-      ]
-    );
+    // O cliente precisa de um nome real. Se a planilha não tiver
+    // uma coluna de nome, usamos o ID apenas como fallback.
+    const nomePublico = nome || (id ? `Produto ${id}` : "Produto");
+    const precoPublicoValor = precoPublico(preco);
 
-    const custo = encontrarValor(
-      row,
-      headers,
-      [
-        "custo produto (€)",
-        "custo produto",
-        "custo",
-        "preço custo",
-        "preco custo"
-      ]
-    );
-
-    const preco = encontrarValor(
-      row,
-      headers,
-      [
-        "preço venda (€)",
-        "preco venda",
-        "preço",
-        "preco",
-        "preço venda"
-      ]
-    );
-
-    const stock = encontrarValor(
-      row,
-      headers,
-      [
-        "stock fornecedor",
-        "stock"
-      ]
-    );
-
-    const descricao = encontrarValor(
-      row,
-      headers,
-      [
-        "descrição",
-        "descricao",
-        "detalhes",
-        "descrição produto"
-      ]
-    );
-
-    const imagem = encontrarValor(
-      row,
-      headers,
-      [
-        "link imagem",
-        "imagem",
-        "url imagem",
-        "imagem url",
-        "foto",
-        "url da imagem"
-      ]
-    );
-
-    const nome = encontrarValor(
-      row,
-      headers,
-      [
-        "nome produto",
-        "nome do produto",
-        "produto",
-        "nome",
-        "título",
-        "titulo"
-      ]
-    );
-
-    const link = encontrarValor(
-      row,
-      headers,
-      [
-        "link compra",
-        "link produto",
-        "url produto",
-        "link",
-        "url"
-      ]
-    );
-
-    // Ignorar linhas que não são produtos
-    if (
-      !id &&
-      !nome &&
-      !fornecedor &&
-      !custo &&
-      !preco
-    ) {
-      continue;
-    }
-
-    // Ignorar cabeçalhos repetidos
-    if (
-      normalizarCabecalho(id) === "id" ||
-      normalizarCabecalho(nome) === "nome"
-    ) {
-      continue;
-    }
+    // Não publica produtos sem preço válido.
+    if (!precoPublicoValor) continue;
 
     produtos.push({
-      id: id || `PROD-${produtos.length + 1}`,
-      nome: nome || "Produto",
-      preco: preco || "0",
-      imagem: imagem || "",
-      stock: stock || "0",
-      descricao: descricao || "",
-      fornecedor: fornecedor || "",
-      custo: custo || "0",
-      link: link || ""
+      id: id || `PROD-${String(produtos.length + 1).padStart(3, "0")}`,
+      nome: nomePublico,
+      preco: precoPublicoValor,
+      imagem,
+      descricao: descricao || "Produto selecionado pela NovaOra.",
+
+      // Campos internos — NÃO serão enviados ao cliente.
+      _interno: {
+        stock,
+        fornecedor,
+        custo,
+        link
+      }
     });
   }
 
@@ -307,233 +319,115 @@ function extrairProdutos(linhas) {
 }
 
 // ======================================================
-// BUSCAR UMA PLANILHA
+// REMOVER CAMPOS INTERNOS ANTES DA RESPOSTA
 // ======================================================
+function prepararParaCliente(produtos) {
+  return produtos.map(({ _interno, ...publico }) => publico);
+}
 
+// ======================================================
+// GOOGLE SHEETS
+// ======================================================
 async function buscarPlanilha(url) {
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: { "User-Agent": "NovaOra/1.0" }
+    });
 
     if (!response.ok) {
-      throw new Error(
-        `Google Sheets respondeu com ${response.status}`
-      );
+      throw new Error(`Google Sheets respondeu com HTTP ${response.status}`);
     }
 
-    const csv = await response.text();
-
-    return csvParaLinhas(csv);
-
+    return parseCSV(await response.text());
   } catch (error) {
-
-    console.error(
-      "Erro ao buscar Google Sheets:",
-      error.message
-    );
-
+    console.error("[NOVAORA] Erro Google Sheets:", error.message);
     return [];
   }
 }
 
 // ======================================================
-// API - PRODUTOS
+// API PRODUTOS
 // ======================================================
-
 app.get("/api/products", async (req, res) => {
-
   try {
+    const [linhas1, linhas2] = await Promise.all([
+      buscarPlanilha(SHEET_URL_1),
+      buscarPlanilha(SHEET_URL_2)
+    ]);
 
-    console.log(
-      "======================================"
-    );
+    console.log(`[NOVAORA] Planilha 1: ${linhas1.length} linhas`);
+    console.log(`[NOVAORA] Planilha 2: ${linhas2.length} linhas`);
 
-    console.log(
-      "NOVAORA - carregando produtos..."
-    );
-
-    // Buscar as duas abas
-    const linhas1 =
-      await buscarPlanilha(SHEET_URL_1);
-
-    const linhas2 =
-      await buscarPlanilha(SHEET_URL_2);
-
-    console.log(
-      `Planilha 1: ${linhas1.length} linhas`
-    );
-
-    console.log(
-      `Planilha 2: ${linhas2.length} linhas`
-    );
-
-    // Extrair produtos
-    const produtos1 =
-      extrairProdutos(linhas1);
-
-    const produtos2 =
-      extrairProdutos(linhas2);
-
-    // Juntar os produtos
-    const todosProdutos = [
-      ...produtos1,
-      ...produtos2
+    const produtos = [
+      ...extrairProdutos(linhas1),
+      ...extrairProdutos(linhas2)
     ];
 
-    // Remover duplicados pelo ID
+    // Remove duplicados por ID.
     const mapa = new Map();
-
-    for (const produto of todosProdutos) {
-
-      if (!mapa.has(produto.id)) {
-        mapa.set(
-          produto.id,
-          produto
-        );
-      }
+    for (const produto of produtos) {
+      if (!mapa.has(produto.id)) mapa.set(produto.id, produto);
     }
 
-    const produtos =
-      Array.from(mapa.values());
+    const resultado = prepararParaCliente(Array.from(mapa.values()));
 
-    console.log(
-      `Produtos encontrados: ${produtos.length}`
-    );
+    console.log(`[NOVAORA] Produtos publicados: ${resultado.length}`);
 
-    console.log(
-      "======================================"
-    );
-
-    res.json(produtos);
-
+    res.json(resultado);
   } catch (error) {
-
-    console.error(
-      "Erro na API:",
-      error
-    );
-
+    console.error("[NOVAORA] Erro /api/products:", error);
     res.status(500).json({
-      error:
-        "Erro ao carregar produtos da Google Sheets.",
-      detalhes:
-        error.message
+      error: "Erro ao carregar produtos da Google Sheets."
     });
   }
 });
 
 // ======================================================
-// API - CONFIGURAÇÕES DA LOJA
+// API CONFIGURAÇÕES
 // ======================================================
-
 app.get("/api/config", async (req, res) => {
-
   try {
-
-    const linhas =
-      await buscarPlanilha(SHEET_URL_1);
-
+    const linhas = await buscarPlanilha(SHEET_URL_1);
     const configuracao = {};
 
     for (const linha of linhas) {
-
-      if (linha.length < 2) {
-        continue;
-      }
-
-      const chave =
-        limparTexto(linha[0]);
-
-      const valor =
-        limparTexto(linha[1]);
-
-      if (chave) {
-        configuracao[chave] = valor;
-      }
+      if (linha.length < 2) continue;
+      const chave = limparTexto(linha[0]);
+      const valorConfig = limparTexto(linha[1]);
+      if (chave) configuracao[chave] = valorConfig;
     }
 
     res.json(configuracao);
-
   } catch (error) {
-
-    console.error(
-      "Erro ao carregar configurações:",
-      error
-    );
-
-    res.status(500).json({
-      error:
-        "Erro ao carregar configurações."
-    });
+    console.error("[NOVAORA] Erro /api/config:", error);
+    res.status(500).json({ error: "Erro ao carregar configurações." });
   }
 });
 
 // ======================================================
-// PÁGINA PRINCIPAL
+// ROTAS
 // ======================================================
-
 app.get("/", (req, res) => {
-
-  res.sendFile(
-    __dirname + "/public/index.html"
-  );
-
+  res.sendFile(__dirname + "/public/index.html");
 });
-
-// ======================================================
-// OUTRAS ROTAS
-// EXPRESS 5 - SEM app.get("*")
-// ======================================================
 
 app.use((req, res, next) => {
-
-  if (
-    req.method === "GET" &&
-    !req.path.startsWith("/api/")
-  ) {
-
-    return res.sendFile(
-      __dirname + "/public/index.html"
-    );
+  if (req.method === "GET" && !req.path.startsWith("/api/")) {
+    return res.sendFile(__dirname + "/public/index.html");
   }
-
   next();
-
 });
-
-// ======================================================
-// TRATAMENTO DE ERROS
-// ======================================================
 
 app.use((err, req, res, next) => {
-
-  console.error(
-    "Erro interno:",
-    err
-  );
-
-  res.status(500).json({
-    error:
-      "Erro interno no servidor NovaOra."
-  });
-
+  console.error("[NOVAORA] Erro interno:", err);
+  res.status(500).json({ error: "Erro interno no servidor NovaOra." });
 });
 
 // ======================================================
-// INICIAR SERVIDOR
+// ARRANQUE
 // ======================================================
-
 app.listen(PORT, "0.0.0.0", () => {
-
-  console.log(
-    `======================================`
-  );
-
-  console.log(
-    `NOVAORA funcionando na porta ${PORT}`
-  );
-
-  console.log(
-    `======================================`
-  );
-
+  console.log("======================================");
+  console.log(`NOVAORA funcionando na porta ${PORT}`);
+  console.log("======================================");
 });

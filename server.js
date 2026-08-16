@@ -4,13 +4,23 @@ const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-// ID da sua planilha Google Sheets
-const SHEET_ID = "1w4WGdP-9dezy2ekPlcv7G4C8H2_GUSbcuFlWacvSBXM";
+// ===============================
+// GOOGLE SHEETS
+// ===============================
 
-// GID da primeira aba da planilha
+const SHEET_ID = "1w4WGdP-9dezy2ekPlcv7G4C8H2_GUSbcuFlWacvSBXM";
 const SHEET_GID = "0";
 
+// ===============================
+// CONFIGURAÇÃO
+// ===============================
+
+app.use(express.json());
 app.use(express.static("public"));
+
+// ===============================
+// CONVERTER CSV DA PLANILHA
+// ===============================
 
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
@@ -21,9 +31,9 @@ function parseCSV(text) {
 
   const headers = lines[0]
     .split(",")
-    .map(h => h.trim().toLowerCase());
+    .map((header) => header.trim().toLowerCase());
 
-  return lines.slice(1).map(line => {
+  return lines.slice(1).map((line) => {
     const values = line.split(",");
 
     const product = {};
@@ -36,15 +46,22 @@ function parseCSV(text) {
   });
 }
 
+// ===============================
+// API DOS PRODUTOS
+// ===============================
+
 app.get("/api/products", async (req, res) => {
   try {
     const url =
-      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
+      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export` +
+      `?format=csv&gid=${SHEET_GID}`;
 
     const response = await fetch(url);
 
     if (!response.ok) {
-      throw new Error("Não foi possível acessar a Google Sheets.");
+      throw new Error(
+        "Não foi possível acessar a Google Sheets."
+      );
     }
 
     const csv = await response.text();
@@ -55,7 +72,10 @@ app.get("/api/products", async (req, res) => {
 
   } catch (error) {
 
-    console.error(error);
+    console.error(
+      "Erro ao carregar produtos:",
+      error
+    );
 
     res.status(500).json({
       error: "Erro ao carregar produtos da Google Sheets."
@@ -63,10 +83,42 @@ app.get("/api/products", async (req, res) => {
   }
 });
 
-app.get("*", (req, res) => {
-  res.sendFile(__dirname + "/public/index.html");
+// ===============================
+// PÁGINA PRINCIPAL
+// ===============================
+
+app.get("/", (req, res) => {
+  res.sendFile(
+    __dirname + "/public/index.html"
+  );
 });
 
+// ===============================
+// OUTRAS ROTAS
+// ===============================
+
+app.use((req, res, next) => {
+
+  if (
+    req.method === "GET" &&
+    !req.path.startsWith("/api/")
+  ) {
+    return res.sendFile(
+      __dirname + "/public/index.html"
+    );
+  }
+
+  next();
+});
+
+// ===============================
+// SERVIDOR
+// ===============================
+
 app.listen(PORT, () => {
-  console.log(`NovaOra funcionando na porta ${PORT}`);
+
+  console.log(
+    `NovaOra funcionando na porta ${PORT}`
+  );
+
 });

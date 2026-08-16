@@ -1,4 +1,3 @@
-
 const express = require("express");
 
 const app = express();
@@ -6,10 +5,13 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 // ==========================================
-// GOOGLE SHEETS - LINK PUBLICADO
+// GOOGLE SHEETS - DUAS ABAS
 // ==========================================
 
-const SHEET_CSV_URL =
+const SHEET_CSV_URL_1 =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRo5j9tTX3G9UUPhz4tvAU53oegJuoPE4GOk25fc2d-7VFPTwng0EySQqEr9S_JyqebGtxlsXZlIJiK/pub?gid=0&single=true&output=csv";
+
+const SHEET_CSV_URL_2 =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRo5j9tTX3G9UUPhz4tvAU53oegJuoPE4GOk25fc2d-7VFPTwng0EySQqEr9S_JyqebGtxlsXZlIJiK/pub?gid=26648085&single=true&output=csv";
 
 // ==========================================
@@ -24,7 +26,10 @@ app.use(express.static("public"));
 // ==========================================
 
 function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
+  const lines = text
+    .trim()
+    .split(/\r?\n/)
+    .filter(line => line.trim() !== "");
 
   if (lines.length < 2) {
     return [];
@@ -55,39 +60,71 @@ function parseCSV(text) {
 }
 
 // ==========================================
+// BUSCAR UMA ABA DA PLANILHA
+// ==========================================
+
+async function buscarPlanilha(url) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `Erro ao acessar Google Sheets: ${response.status}`
+    );
+  }
+
+  const csv = await response.text();
+
+  return parseCSV(csv);
+}
+
+// ==========================================
 // API DOS PRODUTOS
 // ==========================================
 
 app.get("/api/products", async (req, res) => {
   try {
-    const response = await fetch(SHEET_CSV_URL);
 
-    if (!response.ok) {
-      throw new Error(
-        "Não foi possível acessar a Google Sheets."
-      );
-    }
+    console.log("A carregar primeira aba...");
 
-    const csv = await response.text();
-
-    const products = parseCSV(csv);
+    const produtos1 =
+      await buscarPlanilha(SHEET_CSV_URL_1);
 
     console.log(
-      `Produtos carregados da planilha: ${products.length}`
+      `Primeira aba: ${produtos1.length} produtos`
     );
 
-    res.json(products);
+    console.log("A carregar segunda aba...");
+
+    const produtos2 =
+      await buscarPlanilha(SHEET_CSV_URL_2);
+
+    console.log(
+      `Segunda aba: ${produtos2.length} produtos`
+    );
+
+    // Junta os produtos das duas abas
+    const produtos = [
+      ...produtos1,
+      ...produtos2
+    ];
+
+    console.log(
+      `TOTAL: ${produtos.length} produtos carregados`
+    );
+
+    res.json(produtos);
 
   } catch (error) {
 
     console.error(
-      "Erro ao carregar produtos:",
+      "ERRO AO CARREGAR GOOGLE SHEETS:",
       error
     );
 
     res.status(500).json({
       error:
-        "Erro ao carregar produtos da Google Sheets."
+        "Não foi possível carregar os produtos da Google Sheets.",
+      detalhes: error.message
     });
   }
 });
@@ -103,7 +140,7 @@ app.get("/", (req, res) => {
 });
 
 // ==========================================
-// OUTRAS PÁGINAS
+// OUTRAS ROTAS
 // ==========================================
 
 app.use((req, res, next) => {
@@ -125,9 +162,7 @@ app.use((req, res, next) => {
 // ==========================================
 
 app.listen(PORT, () => {
-
   console.log(
     `NovaOra funcionando na porta ${PORT}`
   );
-
 });

@@ -1,10 +1,13 @@
 {
   "name": "lojanovaora",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "NOVAORA online store synchronized with Google Sheets",
+  "description": "NOVAORA online store synchronized with Google Sheets and Stripe",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "stripe": "^18.5.0"
   }
 }
